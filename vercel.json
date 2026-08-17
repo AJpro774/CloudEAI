@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build -w @cloudeai/site",
+  "outputDirectory": "apps/site/dist",
+  "framework": null,
+  "cleanUrls": true
+}

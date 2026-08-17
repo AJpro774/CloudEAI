@@ -1,0 +1,22 @@
+{
+  "name": "cloudeai",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @cloudeai/desktop",
+    "dev:desktop": "npm run tauri:dev -w @cloudeai/desktop",
+    "dev:site": "npm run dev -w @cloudeai/site",
+    "dev:sync": "npm run dev -w @cloudeai/sync-worker",
+    "build": "npm run build --workspaces --if-present",
+    "build:desktop": "npm run tauri:build -w @cloudeai/desktop",
+    "check": "npm run check --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

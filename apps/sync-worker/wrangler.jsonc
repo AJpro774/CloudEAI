@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "cloudeai-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ALLOWED_ORIGINS": "tauri://localhost,http://tauri.localhost,http://localhost:1420,http://127.0.0.1:1420,http://localhost:5173,http://127.0.0.1:5173",
+    "GEMINI_MODEL": "gemini-3.7-flash",
+    "CLOUD_DAILY_REQUEST_LIMIT": "25",
+    "CLOUD_DAILY_CHARACTER_LIMIT": "800000"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cloudeai-sync",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

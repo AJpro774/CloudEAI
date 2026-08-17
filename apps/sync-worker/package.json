@@ -1,0 +1,23 @@
+{
+  "name": "@cloudeai/sync-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:env": "node scripts/prepare-dev-vars.mjs",
+    "dev": "npm run prepare:env && wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "npm run prepare:env && wrangler types src/env.d.ts",
+    "check": "npm run types && tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260817.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.123.0"
+  },
+  "dependencies": {
+    "@cloudeai/shared": "^0.1.0"
+  }
+}
