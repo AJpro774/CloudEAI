@@ -103,8 +103,8 @@ Update `VITE_CLOUD_API_URL` for release builds and add the production website or
 ## Public testing
 
 - Source: https://github.com/AJpro774/CloudEAI
-- Website: set after Vercel production deploy
-- macOS download: GitHub Releases (unsigned Apple Silicon DMG)
+- Website: https://cloudeai-eosin.vercel.app
+- macOS download: https://github.com/AJpro774/CloudEAI/releases/tag/public-test-0.1.0
 
 This is an unsigned public-test build. macOS Gatekeeper will warn. Right-click CloudEAI.app and choose **Open**. Cloud chat needs the Worker deployed; local Gemma works after the in-app model download.
 

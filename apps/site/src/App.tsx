@@ -366,7 +366,11 @@ function App() {
               Download available after first release
             </span>
           )}
-          <small>Ad-free. Tracking-free. No account required for local mode.</small>
+          <small>
+            Unsigned Apple Silicon public-test build. Right-click Open if macOS
+            blocks it. Ad-free. Tracking-free. No account required for local
+            mode.
+          </small>
         </section>
       </main>
 
@@ -379,6 +383,7 @@ function App() {
         <div>
           <a href="#privacy">Privacy</a>
           <a href="#accessibility">Accessibility</a>
+          <a href="https://github.com/AJpro774/CloudEAI">Source on GitHub</a>
           <span>No analytics</span>
         </div>
       </footer>
