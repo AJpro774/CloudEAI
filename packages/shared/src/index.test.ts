@@ -14,6 +14,14 @@ describe("CloudEAI model contracts", () => {
   it("pins Gemini cloud and Liquid local models", () => {
     expect(GEMINI_MODEL).toBe("gemini-3.7-flash");
     expect(resolveCloudModel("unknown").id).toBe(GEMINI_MODEL);
+    expect(resolveCloudModel("gemini-2.5-pro").shortLabel).toBe("2.5 Pro");
+    expect(resolveCloudModel("gemini-2.5-flash-lite").id).toBe(
+      "gemini-3.5-flash-lite",
+    );
+    expect(resolveCloudModel("gemini-3.5-flash-lite").shortLabel).toBe("3.5 Lite");
+    expect(resolveCloudModel("gemini-3.1-flash-lite").id).toBe(
+      "gemini-3.1-flash-lite",
+    );
     expect(resolveLocalModel("lfm2.5-vl-3b").vision).toBe(true);
     expect(resolveLocalModel("lfm2-1.2b-extract").role).toBe("extract");
     expect(LOCAL_MODEL.file).toContain("LFM2.5-2.6B");

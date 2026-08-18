@@ -1,6 +1,6 @@
 [package]
 name = "cloudeai-desktop"
-version = "0.1.0"
+version = "1.0.0"
 description = "Private local-first AI assistant for macOS"
 authors = ["CloudEAI"]
 license = "Apache-2.0"

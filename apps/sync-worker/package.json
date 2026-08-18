@@ -1,6 +1,6 @@
 {
   "name": "@cloudeai/sync-worker",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,6 +18,6 @@
     "wrangler": "^4.123.0"
   },
   "dependencies": {
-    "@cloudeai/shared": "^0.1.0"
+    "@cloudeai/shared": "^1.0.0"
   }
 }

@@ -6,7 +6,7 @@ import type {
   EncryptedEnvelope,
   ModelMessage,
 } from "@cloudeai/shared";
-import { LOCAL_DEFAULT_MODEL } from "@cloudeai/shared";
+import { GEMINI_MODEL, LOCAL_DEFAULT_MODEL } from "@cloudeai/shared";
 
 export interface ModelStatus {
   id: string;
@@ -204,7 +204,7 @@ export async function streamCloudChat(
   }
   return {
     text,
-    model: response.headers.get("X-CloudEAI-Model") ?? "gemini-3.7-flash",
+    model: response.headers.get("X-CloudEAI-Model") ?? GEMINI_MODEL,
     remaining: Number(response.headers.get("X-RateLimit-Remaining") ?? ""),
   };
 }

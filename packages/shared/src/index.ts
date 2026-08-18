@@ -105,16 +105,70 @@ export interface ChatResponse {
   remaining?: number;
 }
 
-export const GEMINI_MODEL = "gemini-3.7-flash";
-
 export const CLOUD_MODELS = [
   {
-    id: GEMINI_MODEL,
+    id: "gemini-3.7-flash",
     provider: "gemini" as const,
     label: "Gemini 3.7 Flash",
+    shortLabel: "3.7 Flash",
     family: "Gemini",
+    blurb: "Latest workhorse for chat, code, and files",
+  },
+  {
+    id: "gemini-3.6-flash",
+    provider: "gemini" as const,
+    label: "Gemini 3.6 Flash",
+    shortLabel: "3.6 Flash",
+    family: "Gemini",
+    blurb: "Fast coding and agent-style replies",
+  },
+  {
+    id: "gemini-3.5-flash",
+    provider: "gemini" as const,
+    label: "Gemini 3.5 Flash",
+    shortLabel: "3.5 Flash",
+    family: "Gemini",
+    blurb: "Strong everyday Flash model",
+  },
+  {
+    id: "gemini-3.5-flash-lite",
+    provider: "gemini" as const,
+    label: "Gemini 3.5 Flash-Lite",
+    shortLabel: "3.5 Lite",
+    family: "Gemini",
+    blurb: "Fastest current Lite model; replaces 2.5 Flash-Lite",
+  },
+  {
+    id: "gemini-3.1-flash-lite",
+    provider: "gemini" as const,
+    label: "Gemini 3.1 Flash-Lite",
+    shortLabel: "3.1 Lite",
+    family: "Gemini",
+    blurb: "Fast option when the daily quota is tight",
+  },
+  {
+    id: "gemini-2.5-pro",
+    provider: "gemini" as const,
+    label: "Gemini 2.5 Pro",
+    shortLabel: "2.5 Pro",
+    family: "Gemini",
+    blurb: "Deeper reasoning for harder questions",
+  },
+  {
+    id: "gemini-2.5-flash",
+    provider: "gemini" as const,
+    label: "Gemini 2.5 Flash",
+    shortLabel: "2.5 Flash",
+    family: "Gemini",
+    blurb: "Classic 2.5 Flash, if your API key still has access",
   },
 ] as const;
+
+const CLOUD_MODEL_ALIASES: Record<string, string> = {
+  "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+};
+
+export const GEMINI_MODEL = CLOUD_MODELS[0].id;
 
 export type CloudModelId = (typeof CLOUD_MODELS)[number]["id"];
 
@@ -122,11 +176,14 @@ export type ResolvedCloudModel = {
   id: string;
   provider: "gemini";
   label: string;
+  shortLabel: string;
   family: string;
+  blurb: string;
 };
 
 export function resolveCloudModel(id: string | undefined): ResolvedCloudModel {
-  return CLOUD_MODELS.find((model) => model.id === id) ?? CLOUD_MODELS[0];
+  const requested = id ? (CLOUD_MODEL_ALIASES[id] ?? id) : undefined;
+  return CLOUD_MODELS.find((model) => model.id === requested) ?? CLOUD_MODELS[0];
 }
 
 export const LOCAL_MODELS = [

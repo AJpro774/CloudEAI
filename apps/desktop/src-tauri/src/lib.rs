@@ -179,8 +179,31 @@ fn history_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("history.enc.json"))
 }
 
+fn history_key_cache() -> &'static Mutex<Option<[u8; 32]>> {
+    static CACHE: Mutex<Option<[u8; 32]>> = Mutex::new(None);
+    &CACHE
+}
+
+fn cached_history_key() -> Option<[u8; 32]> {
+    history_key_cache().lock().ok().and_then(|guard| *guard)
+}
+
+fn store_history_key(key: [u8; 32]) {
+    if let Ok(mut guard) = history_key_cache().lock() {
+        *guard = Some(key);
+    }
+}
+
 fn keychain_entry() -> Result<Entry, String> {
     Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|error| error.to_string())
+}
+
+fn format_keychain_error(error: keyring::Error) -> String {
+    let text = error.to_string();
+    if text.contains("User canceled") || text.contains("-128") {
+        return "macOS asked for Keychain access and it was canceled. When the prompt appears, click Allow so CloudEAI can save encrypted history. Chat still works until you quit.".to_string();
+    }
+    format!("Could not open macOS Keychain: {error}")
 }
 
 fn decode_key(value: &str) -> Result<[u8; 32], String> {
@@ -193,9 +216,13 @@ fn decode_key(value: &str) -> Result<[u8; 32], String> {
 }
 
 fn load_or_create_key() -> Result<[u8; 32], String> {
+    if let Some(key) = cached_history_key() {
+        return Ok(key);
+    }
+
     let entry = keychain_entry()?;
-    match entry.get_password() {
-        Ok(value) => decode_key(&value),
+    let key = match entry.get_password() {
+        Ok(value) => decode_key(&value)?,
         Err(keyring::Error::NoEntry) => {
             let key = Key::<Aes256Gcm>::generate();
             let encoded = URL_SAFE_NO_PAD.encode(key.as_slice());
@@ -204,10 +231,12 @@ fn load_or_create_key() -> Result<[u8; 32], String> {
                 .map_err(|error| format!("Could not save the history key: {error}"))?;
             key.as_slice()
                 .try_into()
-                .map_err(|_| "Could not create the history key.".to_string())
+                .map_err(|_| "Could not create the history key.".to_string())?
         }
-        Err(error) => Err(format!("Could not open macOS Keychain: {error}")),
-    }
+        Err(error) => return Err(format_keychain_error(error)),
+    };
+    store_history_key(key);
+    Ok(key)
 }
 
 fn encrypt_payload(payload: &str, updated_at: String) -> Result<EncryptedEnvelope, String> {

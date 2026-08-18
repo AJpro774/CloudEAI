@@ -1,7 +1,9 @@
 import {
   CLOUD_LIMITS,
+  CLOUD_MODELS,
   FILE_UPLOAD,
   GEMINI_MODEL,
+  resolveCloudModel,
   type ChatFilePart,
   type ChatRequest,
   type ModelMessage,
@@ -583,7 +585,9 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
     return json(request, env, { error: "Gemini is not configured." }, 503);
   }
 
-  const model = env.GEMINI_MODEL || GEMINI_MODEL;
+  const model = resolveCloudModel(
+    typeof body?.model === "string" ? body.model : env.GEMINI_MODEL,
+  ).id;
   const upstream = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
           {
@@ -666,6 +670,7 @@ async function handleRequest(
         service: "cloudeai-api",
         gemini: Boolean(env.GEMINI_API_KEY),
         model: env.GEMINI_MODEL || GEMINI_MODEL,
+        models: CLOUD_MODELS.map((model) => model.id),
       });
     }
 

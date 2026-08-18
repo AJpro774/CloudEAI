@@ -13,9 +13,11 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  CLOUD_MODELS,
   LOCAL_DEFAULT_MODEL,
   LOCAL_MODELS,
   MODE_CONFIGS,
+  resolveCloudModel,
   resolveLocalModel,
   type Conversation,
   type ModelRoute,
@@ -40,6 +42,7 @@ interface ChatViewProps {
   onAttach: (files: FileList | null) => void;
   onRemoveAttachment: (id: string) => void;
   onRouteChange: (route: ModelRoute) => void;
+  onCloudModelChange: (modelId: string) => void;
   onLocalModelChange: (modelId: string) => void;
   onSend: () => void;
   onCancel: () => void;
@@ -61,6 +64,7 @@ export function ChatView({
   onAttach,
   onRemoveAttachment,
   onRouteChange,
+  onCloudModelChange,
   onLocalModelChange,
   onSend,
   onCancel,
@@ -72,6 +76,7 @@ export function ChatView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const config = MODE_CONFIGS[conversation.mode] ?? MODE_CONFIGS.code;
   const localModel = resolveLocalModel(conversation.localModelId);
+  const cloudModel = resolveCloudModel(conversation.cloudModelId);
   const isLocal = conversation.modelRoute === "local";
 
   useEffect(() => {
@@ -94,7 +99,7 @@ export function ChatView({
             <Sparkles size={18} aria-hidden="true" />
             <span>
               <strong>Gemini</strong>
-              <small>3.7 Flash</small>
+              <small>{cloudModel.shortLabel}</small>
             </span>
           </button>
           <button
@@ -124,7 +129,22 @@ export function ChatView({
                 ))}
               </select>
             </label>
-          ) : null}
+          ) : (
+            <label className="model-select">
+              <span className="sr-only">Gemini model</span>
+              <select
+                value={cloudModel.id}
+                onChange={(event) => onCloudModelChange(event.currentTarget.value)}
+                aria-label="Gemini model"
+              >
+                {CLOUD_MODELS.map((model) => (
+                  <option key={model.id} value={model.id} title={model.blurb}>
+                    {model.shortLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <div className={`route-status route-${conversation.modelRoute}`}>
           <span aria-hidden="true" />
@@ -171,7 +191,7 @@ export function ChatView({
                       ? message.modelLabel ??
                         (message.modelRoute === "local"
                           ? resolveLocalModel(conversation.localModelId).label
-                          : "Gemini 3.7 Flash")
+                          : resolveCloudModel(conversation.cloudModelId).label)
                       : config.label}
                   </span>
                   {message.role === "assistant" ? (
@@ -326,7 +346,7 @@ export function ChatView({
         <p className="privacy-caption">
           {isLocal
             ? `${localModel.label} stays on this Mac after a one-time download.`
-            : "Gemini prompts go through CloudEAI’s proxy, then are discarded. History stays encrypted on this Mac."}
+            : `${cloudModel.label} prompts go through CloudEAI’s proxy, then are discarded. History stays encrypted on this Mac.`}
         </p>
       </div>
     </section>

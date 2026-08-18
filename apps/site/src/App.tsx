@@ -90,7 +90,7 @@ function App() {
               <span>Powerful when you want it.</span>
             </h1>
             <p>
-              CloudEAI combines offline Qwen 2.5 Coder with optional Gemini 3.7 Flash
+              CloudEAI combines offline LiquidAI models with several Gemini options
               in one calm, accessible desktop experience built for serious work.
             </p>
             <div className="hero-actions">
@@ -163,7 +163,7 @@ function App() {
                 </div>
                 <div className="preview-route">
                   <span>
-                    <HardDrive size={15} /> Private · Qwen
+                    <HardDrive size={15} /> Private · Liquid
                   </span>
                   <small>Stays on this Mac</small>
                 </div>
@@ -172,7 +172,7 @@ function App() {
                     <Sparkles size={18} />
                   </span>
                   <div>
-                    <small>CloudEAI · Qwen 2.5 Coder</small>
+                    <small>CloudEAI · Liquid LFM2.5</small>
                     <strong>Use a labeled section with generous spacing.</strong>
                     <p>
                       For VoiceOver and larger text sizes, keep each control at
@@ -205,7 +205,7 @@ function App() {
             <HardDrive aria-hidden="true" />
             <span>
               <small>Offline and private</small>
-              <strong>Qwen 2.5 Coder 3B</strong>
+              <strong>Liquid LFM2.5 2.6B</strong>
             </span>
           </div>
           <i aria-hidden="true">or</i>
@@ -213,7 +213,7 @@ function App() {
             <Cloud aria-hidden="true" />
             <span>
               <small>Fast cloud intelligence</small>
-              <strong>Gemini 3.7 Flash</strong>
+              <strong>Gemini 3.7, 3.5, 3.1 Lite, and 2.5</strong>
             </span>
           </div>
         </section>

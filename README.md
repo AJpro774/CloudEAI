@@ -1,6 +1,6 @@
 # CloudEAI
 
-CloudEAI is an accessible, local-first desktop chatbot for Apple Silicon Macs. It combines offline LiquidAI GGUF models with Gemini 3.7 Flash, encrypted history, voice interaction, and four purpose-built master prompt modes.
+CloudEAI is an accessible, local-first desktop chatbot for Apple Silicon Macs. It combines offline LiquidAI GGUF models with several Gemini cloud models, encrypted history, voice interaction, and four purpose-built master prompt modes.
 
 ## Product commitments
 
@@ -104,9 +104,9 @@ Update `VITE_CLOUD_API_URL` for release builds and add the production website or
 
 - Source: https://github.com/AJpro774/CloudEAI
 - Website: https://cloudeaichat.vercel.app
-- macOS download: https://github.com/AJpro774/CloudEAI/releases/tag/public-test-0.1.0
+- macOS download: https://github.com/AJpro774/CloudEAI/releases/tag/v1.0.0
 
-This is an unsigned public-test build. macOS Gatekeeper will warn. Right-click CloudEAI.app and choose **Open**. Cloud chat needs the Worker deployed; local Gemma works after the in-app model download.
+This is CloudEAI v1, an unsigned build. macOS Gatekeeper will warn. Right-click CloudEAI.app and choose **Open**. Cloud chat needs the Worker deployed; local Liquid models download from Settings.
 
 ## Distribution
 

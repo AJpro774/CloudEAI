@@ -7,6 +7,7 @@ import {
   LOCAL_DEFAULT_MODEL,
   LOCAL_MODELS,
   MODE_CONFIGS,
+  resolveCloudModel,
   resolveLocalModel,
   type AppData,
   type ChatMessage,
@@ -55,6 +56,7 @@ function createConversation(
   mode: MasterMode = "code",
   modelRoute: ModelRoute = "cloud",
   localModelId: string = LOCAL_DEFAULT_MODEL.id,
+  cloudModelId: string = GEMINI_MODEL,
 ): Conversation {
   const timestamp = now();
   return {
@@ -62,7 +64,7 @@ function createConversation(
     title: "New conversation",
     mode,
     modelRoute,
-    cloudModelId: GEMINI_MODEL,
+    cloudModelId,
     localModelId,
     messages: [],
     createdAt: timestamp,
@@ -163,6 +165,10 @@ function App() {
 
   useEffect(() => {
     if (!hydrated || !isDesktopRuntime()) return;
+    const hasConversationContent = data.conversations.some(
+      (conversation) => conversation.messages.length > 0,
+    );
+    if (!hasConversationContent) return;
     const timeout = window.setTimeout(() => {
       void saveAppData(data).catch((error) => setNotice(errorMessage(error)));
     }, 500);
@@ -212,7 +218,7 @@ function App() {
     updateConversation(activeConversation.id, (conversation) => ({
       ...conversation,
       modelRoute,
-      cloudModelId: GEMINI_MODEL,
+      cloudModelId: conversation.cloudModelId ?? GEMINI_MODEL,
       localModelId: conversation.localModelId ?? LOCAL_DEFAULT_MODEL.id,
     }));
   };
@@ -225,11 +231,20 @@ function App() {
     }));
   };
 
+  const selectCloudModel = (cloudModelId: string) => {
+    updateConversation(activeConversation.id, (conversation) => ({
+      ...conversation,
+      modelRoute: "cloud",
+      cloudModelId,
+    }));
+  };
+
   const createNewConversation = () => {
     const conversation = createConversation(
       activeConversation.mode,
       activeConversation.modelRoute,
       activeConversation.localModelId ?? LOCAL_DEFAULT_MODEL.id,
+      activeConversation.cloudModelId ?? GEMINI_MODEL,
     );
     mutateData((current) => ({
       ...current,
@@ -304,6 +319,7 @@ function App() {
     if (isSending) return;
     const conversation = activeConversation;
     const localModel = resolveLocalModel(conversation.localModelId);
+    const cloudModel = resolveCloudModel(conversation.cloudModelId);
     const isLocal = conversation.modelRoute === "local";
     const visibleText = historyLabel(draft, attachments);
     if (!visibleText) return;
@@ -414,7 +430,7 @@ function App() {
             messages: modelMessages,
             systemPrompt,
             temperature: MODE_CONFIGS[conversation.mode].temperature,
-            model: GEMINI_MODEL,
+            model: cloudModel.id,
             files: cloudFiles,
           },
           (chunk) => {
@@ -424,7 +440,7 @@ function App() {
               conversationId,
               assistantId,
               chunk,
-              "Gemini 3.7 Flash",
+              cloudModel.label,
               true,
             );
           },
@@ -447,7 +463,7 @@ function App() {
           conversationId,
           assistantId,
           `I couldn’t complete that request. ${message}`,
-          isLocal ? localModel.label : "Gemini 3.7 Flash",
+          isLocal ? localModel.label : cloudModel.label,
         );
       }
     } finally {
@@ -703,6 +719,7 @@ function App() {
             )
           }
           onRouteChange={selectRoute}
+          onCloudModelChange={selectCloudModel}
           onLocalModelChange={selectLocalModel}
           onSend={() => void sendMessage()}
           onCancel={cancelSend}

@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { LOCAL_MODELS, type UserPreferences } from "@cloudeai/shared";
+import { CLOUD_MODELS, LOCAL_MODELS, type UserPreferences } from "@cloudeai/shared";
 import type {
   ModelDownloadProgress,
   ModelStatus,
@@ -237,10 +237,18 @@ export function SettingsPanel({
             <div className="settings-title">
               <h3 id="model-heading">Gemini + Liquid</h3>
               <p>
-                Gemini is the free cloud model. Liquid LFM models download once
-                and run privately on this Mac.
+                Choose a Gemini model in the chat toolbar. Liquid LFM models
+                download once and run privately on this Mac.
               </p>
             </div>
+            <ul className="cloud-model-list">
+              {CLOUD_MODELS.map((model) => (
+                <li key={model.id}>
+                  <strong>{model.label}</strong>
+                  <span>{model.blurb}</span>
+                </li>
+              ))}
+            </ul>
             {LOCAL_MODELS.map((model) => {
               const status = modelStatuses[model.id];
               const downloaded = status?.modelDownloaded ?? false;

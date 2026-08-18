@@ -59,11 +59,23 @@ describe("CloudEAI sync worker", () => {
     const body = (await response.json()) as {
       ok?: boolean;
       model?: string;
+      models?: string[];
     };
 
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.model).toBe("gemini-3.7-flash");
+    expect(body.models).toEqual(
+      expect.arrayContaining([
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+      ]),
+    );
   });
 
   it("rejects an invalid chat payload", async () => {
