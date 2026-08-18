@@ -7,7 +7,6 @@ import {
   readdir,
   readFile,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,7 +26,23 @@ const release = {
   tag: "b10472",
   archive: "llama-b10472-bin-macos-arm64.tar.gz",
   sha256: "194a3e7008cc8c4e7a8d201012f4a32102333664c2eb7d0511d091589c48a13c",
+  executableSha256:
+    "ede8dfd91bfbb579705c13df583aa6985c0abfd30fbc5d823d242f09e5e30d74",
 };
+
+const bundleLibraryRpath = "@loader_path/../Resources/binaries";
+
+function ensureBundleRpath(binaryPath) {
+  const loadCommands = execFileSync("otool", ["-l", binaryPath], {
+    encoding: "utf8",
+  });
+  if (loadCommands.includes(bundleLibraryRpath)) return;
+  execFileSync("install_name_tool", [
+    "-add_rpath",
+    bundleLibraryRpath,
+    binaryPath,
+  ]);
+}
 
 async function findFiles(root, predicate) {
   const matches = [];
@@ -52,8 +67,12 @@ async function main() {
 
   await mkdir(binaryDirectory, { recursive: true });
   try {
-    const existing = await stat(targetBinary);
-    if (existing.size > 1_000_000) return;
+    const existing = await readFile(targetBinary);
+    const digest = createHash("sha256").update(existing).digest("hex");
+    if (digest === release.executableSha256) {
+      ensureBundleRpath(targetBinary);
+      return;
+    }
   } catch {
     // Download below.
   }
@@ -94,6 +113,7 @@ async function main() {
 
     await copyFile(serverCandidates[0], targetBinary);
     await chmod(targetBinary, 0o755);
+    ensureBundleRpath(targetBinary);
 
     const libraries = await findFiles(
       extractedDirectory,

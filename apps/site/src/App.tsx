@@ -90,7 +90,7 @@ function App() {
               <span>Powerful when you want it.</span>
             </h1>
             <p>
-              CloudEAI combines offline Gemma 4 with optional Gemini 3.7 Flash
+              CloudEAI combines offline Qwen 2.5 Coder with optional Gemini 3.7 Flash
               in one calm, accessible desktop experience built for serious work.
             </p>
             <div className="hero-actions">
@@ -163,7 +163,7 @@ function App() {
                 </div>
                 <div className="preview-route">
                   <span>
-                    <HardDrive size={15} /> Private · Gemma 4
+                    <HardDrive size={15} /> Private · Qwen
                   </span>
                   <small>Stays on this Mac</small>
                 </div>
@@ -172,7 +172,7 @@ function App() {
                     <Sparkles size={18} />
                   </span>
                   <div>
-                    <small>CloudEAI · Gemma 4 E4B</small>
+                    <small>CloudEAI · Qwen 2.5 Coder</small>
                     <strong>Use a labeled section with generous spacing.</strong>
                     <p>
                       For VoiceOver and larger text sizes, keep each control at
@@ -205,7 +205,7 @@ function App() {
             <HardDrive aria-hidden="true" />
             <span>
               <small>Offline and private</small>
-              <strong>Google Gemma 4 E4B</strong>
+              <strong>Qwen 2.5 Coder 3B</strong>
             </span>
           </div>
           <i aria-hidden="true">or</i>
@@ -353,7 +353,7 @@ function App() {
           <h2>A calmer, more private way to work with AI.</h2>
           <p>
             MVP support is focused on Apple Silicon Macs running macOS 13 or
-            later. The offline model requires approximately 7 GB of free space.
+            later. The offline model requires approximately 2 GB of free space.
           </p>
           {downloadUrl ? (
             <a className="primary-cta" href={downloadUrl}>

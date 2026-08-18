@@ -1,32 +1,48 @@
 import { useEffect, useRef } from "react";
 import {
-  Cloud,
   HardDrive,
   Mic,
   MicOff,
+  Paperclip,
   Send,
   Sparkles,
+  Square,
   Volume2,
+  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  LOCAL_DEFAULT_MODEL,
+  LOCAL_MODELS,
   MODE_CONFIGS,
+  resolveLocalModel,
   type Conversation,
   type ModelRoute,
 } from "@cloudeai/shared";
+
+interface ChatAttachment {
+  id: string;
+  name: string;
+  kind?: "text" | "image" | "pdf" | "binary";
+}
 
 interface ChatViewProps {
   conversation: Conversation;
   cloudRemaining: number | null;
   draft: string;
+  attachments: ChatAttachment[];
   isListening: boolean;
   isSending: boolean;
   voiceError: string | null;
   voiceSupported: boolean;
   onDraftChange: (value: string) => void;
+  onAttach: (files: FileList | null) => void;
+  onRemoveAttachment: (id: string) => void;
   onRouteChange: (route: ModelRoute) => void;
+  onLocalModelChange: (modelId: string) => void;
   onSend: () => void;
+  onCancel: () => void;
   onSpeak: (text: string) => void;
   onStartListening: () => void;
   onStopListening: () => void;
@@ -36,19 +52,27 @@ export function ChatView({
   conversation,
   cloudRemaining,
   draft,
+  attachments,
   isListening,
   isSending,
   voiceError,
   voiceSupported,
   onDraftChange,
+  onAttach,
+  onRemoveAttachment,
   onRouteChange,
+  onLocalModelChange,
   onSend,
+  onCancel,
   onSpeak,
   onStartListening,
   onStopListening,
 }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const config = MODE_CONFIGS[conversation.mode];
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const config = MODE_CONFIGS[conversation.mode] ?? MODE_CONFIGS.code;
+  const localModel = resolveLocalModel(conversation.localModelId);
+  const isLocal = conversation.modelRoute === "local";
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -60,39 +84,55 @@ export function ChatView({
   return (
     <section className="chat-panel" aria-label="Chat">
       <header className="chat-toolbar">
-        <div className="route-switcher" aria-label="Model route">
+        <div className="route-switcher" aria-label="Model">
           <button
             type="button"
-            className={conversation.modelRoute === "local" ? "is-active" : ""}
+            className={!isLocal ? "is-active" : ""}
+            onClick={() => onRouteChange("cloud")}
+            aria-pressed={!isLocal}
+          >
+            <Sparkles size={18} aria-hidden="true" />
+            <span>
+              <strong>Gemini</strong>
+              <small>3.7 Flash</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={isLocal ? "is-active" : ""}
             onClick={() => onRouteChange("local")}
-            aria-pressed={conversation.modelRoute === "local"}
+            aria-pressed={isLocal}
           >
             <HardDrive size={18} aria-hidden="true" />
             <span>
-              <strong>Private</strong>
-              <small>Gemma 4 · Offline</small>
+              <strong>Liquid</strong>
+              <small>{isLocal ? localModel.label : LOCAL_DEFAULT_MODEL.label}</small>
             </span>
           </button>
-          <button
-            type="button"
-            className={conversation.modelRoute === "cloud" ? "is-active" : ""}
-            onClick={() => onRouteChange("cloud")}
-            aria-pressed={conversation.modelRoute === "cloud"}
-          >
-            <Cloud size={18} aria-hidden="true" />
-            <span>
-              <strong>Cloud</strong>
-              <small>Gemini 3.7 Flash</small>
-            </span>
-          </button>
+          {isLocal ? (
+            <label className="model-select">
+              <span className="sr-only">Liquid model</span>
+              <select
+                value={localModel.id}
+                onChange={(event) => onLocalModelChange(event.currentTarget.value)}
+                aria-label="Liquid model"
+              >
+                {LOCAL_MODELS.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
         <div className={`route-status route-${conversation.modelRoute}`}>
           <span aria-hidden="true" />
-          {conversation.modelRoute === "local"
+          {isLocal
             ? "Stays on this Mac"
             : cloudRemaining === null
-              ? "Google processing · TLS"
-              : `${cloudRemaining} cloud requests left today`}
+              ? "Gemini · TLS"
+              : `${cloudRemaining} Gemini requests left today`}
         </div>
       </header>
 
@@ -130,7 +170,7 @@ export function ChatView({
                     {message.role === "assistant"
                       ? message.modelLabel ??
                         (message.modelRoute === "local"
-                          ? "Gemma 4 E4B"
+                          ? resolveLocalModel(conversation.localModelId).label
                           : "Gemini 3.7 Flash")
                       : config.label}
                   </span>
@@ -176,13 +216,37 @@ export function ChatView({
       <div className="composer-wrap">
         {voiceError ? <p className="voice-error">{voiceError}</p> : null}
         <div className={`composer${isListening ? " is-listening" : ""}`}>
+          {attachments.length > 0 ? (
+            <ul className="attachment-list" aria-label="Attached files">
+              {attachments.map((file) => (
+                <li key={file.id}>
+                  <span>
+                    {file.kind === "image"
+                      ? "Image · "
+                      : file.kind === "pdf"
+                        ? "PDF · "
+                        : ""}
+                    {file.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveAttachment(file.id)}
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <textarea
             value={draft}
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                onSend();
+                if (!isSending && (draft.trim() || attachments.length > 0))
+                  onSend();
               }
             }}
             rows={2}
@@ -190,6 +254,27 @@ export function ChatView({
             aria-label="Message CloudEAI"
           />
           <div className="composer-actions">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.html,.css,.rs,.ts,.tsx,.js,.jsx,.py,.swift,.kt,.java,.go,.c,.h,.cpp,.hpp,.toml,.yml,.yaml,.sql,.sh,.rb,.php,.log"
+              onChange={(event) => {
+                onAttach(event.currentTarget.files);
+                event.currentTarget.value = "";
+              }}
+            />
+            <button
+              type="button"
+              className="voice-button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending}
+              aria-label="Attach files"
+              title="Attach images, PDFs, or text/code files"
+            >
+              <Paperclip size={21} aria-hidden="true" />
+            </button>
             <button
               type="button"
               className="voice-button"
@@ -210,23 +295,38 @@ export function ChatView({
               )}
             </button>
             <span className="composer-hint">
-              {isListening ? "Listening…" : "Shift + Enter for a new line"}
+              {isSending
+                ? "Working…"
+                : isListening
+                  ? "Listening…"
+                  : "Attach images, PDFs, or code. Shift + Enter for a new line"}
             </span>
-            <button
-              type="button"
-              className="send-button"
-              onClick={onSend}
-              disabled={!draft.trim() || isSending}
-              aria-label="Send message"
-            >
-              <Send size={20} aria-hidden="true" />
-            </button>
+            {isSending ? (
+              <button
+                type="button"
+                className="send-button is-stop"
+                onClick={onCancel}
+                aria-label="Stop current request"
+              >
+                <Square size={16} aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="send-button"
+                onClick={onSend}
+                disabled={!draft.trim() && attachments.length === 0}
+                aria-label="Send message"
+              >
+                <Send size={20} aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
         <p className="privacy-caption">
-          {conversation.modelRoute === "local"
-            ? "Local mode works offline after the one-time model download."
-            : "Cloud prompts are processed by CloudEAI’s proxy and Google, then discarded."}
+          {isLocal
+            ? `${localModel.label} stays on this Mac after a one-time download.`
+            : "Gemini prompts go through CloudEAI’s proxy, then are discarded. History stays encrypted on this Mac."}
         </p>
       </div>
     </section>

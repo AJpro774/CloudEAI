@@ -5,7 +5,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { MODE_CONFIGS, type Conversation } from "@cloudeai/shared";
+import { MODE_CONFIGS, resolveLocalModel, type Conversation } from "@cloudeai/shared";
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -32,7 +32,7 @@ export function Sidebar({
         </span>
         <span>
           <strong>CloudEAI</strong>
-          <small>Private intelligence</small>
+          <small>Gemini + Liquid</small>
         </span>
       </div>
 
@@ -62,8 +62,10 @@ export function Sidebar({
                   <span>
                     <strong>{conversation.title}</strong>
                     <small>
-                      {MODE_CONFIGS[conversation.mode].label} ·{" "}
-                      {conversation.modelRoute === "local" ? "Local" : "Cloud"}
+                      {MODE_CONFIGS[conversation.mode]?.label ?? "Chat"} ·{" "}
+                      {conversation.modelRoute === "local"
+                        ? resolveLocalModel(conversation.localModelId).label
+                        : "Gemini"}
                     </small>
                   </span>
                 </button>

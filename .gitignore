@@ -1,3 +1,5 @@
+chatgpt.env
+grok.env
 .DS_Store
 .env
 .env.*

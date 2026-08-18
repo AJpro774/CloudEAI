@@ -1,6 +1,8 @@
 import {
   CLOUD_LIMITS,
+  FILE_UPLOAD,
   GEMINI_MODEL,
+  type ChatFilePart,
   type ChatRequest,
   type ModelMessage,
 } from "@cloudeai/shared";
@@ -34,7 +36,10 @@ function allowedOrigin(request: Request, env: Env): string | null {
   const origin = request.headers.get("Origin");
   if (!origin) return null;
 
-  const allowed = env.ALLOWED_ORIGINS.split(",").map((value) => value.trim());
+  const allowed = (env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   return allowed.includes(origin) ? origin : null;
 }
 
@@ -318,6 +323,63 @@ async function deleteAccount(
   return json(request, env, { ok: true });
 }
 
+function isChatFilePart(value: unknown): value is ChatFilePart {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as ChatFilePart;
+  if (
+    typeof candidate.name !== "string" ||
+    candidate.name.length < 1 ||
+    candidate.name.length > 200 ||
+    typeof candidate.mimeType !== "string" ||
+    candidate.mimeType.length > 100
+  ) {
+    return false;
+  }
+  const hasText = typeof candidate.text === "string" && candidate.text.length > 0;
+  const hasData =
+    typeof candidate.dataBase64 === "string" && candidate.dataBase64.length > 0;
+  if (hasText === hasData) return false;
+  if (hasText && candidate.text && candidate.text.length > FILE_UPLOAD.maxTextChars) {
+    return false;
+  }
+  if (hasData && candidate.dataBase64) {
+    const bytes = Math.floor((candidate.dataBase64.length * 3) / 4);
+    if (bytes > FILE_UPLOAD.maxFileBytes) return false;
+  }
+  return (
+    candidate.mimeType.startsWith("image/") ||
+    candidate.mimeType === "application/pdf" ||
+    candidate.mimeType.startsWith("text/") ||
+    candidate.mimeType === "application/json" ||
+    candidate.mimeType === "application/xml"
+  );
+}
+
+function geminiPartsForMessage(
+  message: ModelMessage,
+  files: ChatFilePart[] | undefined,
+  isLastUser: boolean,
+): Array<Record<string, unknown>> {
+  const parts: Array<Record<string, unknown>> = [{ text: message.content }];
+  if (!isLastUser || message.role !== "user" || !files?.length) return parts;
+  for (const file of files) {
+    if (file.text) {
+      parts.push({
+        text: `\n\nAttached file: ${file.name}\n${file.text}`,
+      });
+    }
+    if (file.dataBase64) {
+      parts.push({
+        inlineData: {
+          mimeType: file.mimeType,
+          data: file.dataBase64,
+        },
+      });
+    }
+  }
+  return parts;
+}
+
 function isModelMessage(value: unknown): value is ModelMessage {
   if (!value || typeof value !== "object") return false;
   const candidate = value as { role?: unknown; content?: unknown };
@@ -419,6 +481,29 @@ async function readLimitedText(
   return result.slice(0, maxBytes);
 }
 
+function publicCloudError(detail: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(detail) as {
+      error?: { message?: unknown } | string;
+      message?: unknown;
+    };
+    const nested =
+      parsed.error && typeof parsed.error === "object"
+        ? parsed.error.message
+        : parsed.error;
+    const message =
+      (typeof nested === "string" && nested) ||
+      (typeof parsed.message === "string" && parsed.message) ||
+      "";
+    if (message && message.length < 280 && !/sk-|api[_-]?key/i.test(message)) {
+      return message;
+    }
+  } catch {
+    // Keep the generic fallback when the upstream body is not JSON.
+  }
+  return fallback;
+}
+
 async function streamCloudChat(request: Request, env: Env): Promise<Response> {
   const body = await readJson<ChatBody>(request);
   const deviceId =
@@ -428,6 +513,7 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
   const temperature =
     typeof body?.temperature === "number" ? body.temperature : 0.4;
   const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const files = Array.isArray(body?.files) ? body.files : [];
 
   if (
     !/^[A-Za-z0-9_-]{16,128}$/.test(deviceId) ||
@@ -438,14 +524,17 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
     temperature > 1.5 ||
     messages.length < 1 ||
     messages.length > CLOUD_LIMITS.maxMessages ||
-    !messages.every(isModelMessage)
+    !messages.every(isModelMessage) ||
+    files.length > FILE_UPLOAD.maxFiles ||
+    !files.every(isChatFilePart)
   ) {
     return json(request, env, { error: "Invalid chat request." }, 400);
   }
 
   const characterCount =
     systemPrompt.length +
-    messages.reduce((total, message) => total + message.content.length, 0);
+    messages.reduce((total, message) => total + message.content.length, 0) +
+    files.reduce((total, file) => total + (file.text?.length ?? 0), 0);
   if (characterCount > CLOUD_LIMITS.maxRequestCharacters) {
     return json(request, env, { error: "Chat context is too large." }, 413);
   }
@@ -457,14 +546,33 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
   // The device id supports client-side quota UX; the server keys enforcement to
   // the network address so reinstalling the app cannot reset the free allowance.
   const usageKey = await sha256Base64Url(`cloud:${clientAddress}`);
-  const quota = await consumeCloudQuota(env, usageKey, characterCount);
+  let quota: { allowed: boolean; remaining: number };
+  try {
+    quota = await consumeCloudQuota(env, usageKey, characterCount);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "quota_error",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return json(
+      request,
+      env,
+      {
+        error:
+          "Cloud quota storage is unavailable. Apply local D1 migrations and restart the worker.",
+      },
+      503,
+    );
+  }
   if (!quota.allowed) {
     return json(
       request,
       env,
       {
         error:
-          "Cloud limit reached. Local Gemma remains available without limits.",
+          "Cloud limit reached. Try again after the daily reset.",
       },
       429,
       { "Retry-After": "60", "X-RateLimit-Remaining": "0" },
@@ -472,39 +580,44 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
   }
 
   if (!env.GEMINI_API_KEY) {
-    return json(request, env, { error: "Cloud model is not configured." }, 503);
+    return json(request, env, { error: "Gemini is not configured." }, 503);
   }
 
   const model = env.GEMINI_MODEL || GEMINI_MODEL;
   const upstream = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: systemPrompt }],
-        },
-        contents: messages.map((message) => ({
-          role: message.role === "assistant" ? "model" : "user",
-          parts: [{ text: message.content }],
-        })),
-        generationConfig: {
-          temperature,
-          maxOutputTokens: 8_192,
-        },
-      }),
-    },
-  );
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": env.GEMINI_API_KEY,
+            },
+            body: JSON.stringify({
+              systemInstruction: {
+                parts: [{ text: systemPrompt }],
+              },
+              contents: messages.map((message, index) => ({
+                role: message.role === "assistant" ? "model" : "user",
+                parts: geminiPartsForMessage(
+                  message,
+                  files,
+                  index === messages.length - 1,
+                ),
+              })),
+              generationConfig: {
+                temperature,
+                maxOutputTokens: 8_192,
+              },
+            }),
+          },
+        );
 
   if (!upstream.ok || !upstream.body) {
     const detail = await readLimitedText(upstream);
     console.error(
       JSON.stringify({
-        event: "gemini_error",
+        event: "cloud_model_error",
+        provider: "gemini",
         status: upstream.status,
         detail: detail.slice(0, 500),
       }),
@@ -512,8 +625,10 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
     return json(
       request,
       env,
-      { error: "Gemini could not complete this request." },
-      502,
+      {
+        error: publicCloudError(detail, "Gemini could not complete this request."),
+      },
+      upstream.status === 429 || upstream.status === 403 ? upstream.status : 502,
     );
   }
 
@@ -529,8 +644,11 @@ async function streamCloudChat(request: Request, env: Env): Promise<Response> {
   });
 }
 
-export default {
-  async fetch(request, env, ctx): Promise<Response> {
+async function handleRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
     if (request.method === "OPTIONS") {
       if (request.headers.has("Origin") && !allowedOrigin(request, env)) {
         return new Response(null, { status: 403 });
@@ -546,6 +664,7 @@ export default {
       return json(request, env, {
         ok: true,
         service: "cloudeai-api",
+        gemini: Boolean(env.GEMINI_API_KEY),
         model: env.GEMINI_MODEL || GEMINI_MODEL,
       });
     }
@@ -587,5 +706,28 @@ export default {
       405,
       { Allow: "DELETE, GET, OPTIONS, POST, PUT" },
     );
+}
+
+export default {
+  async fetch(request, env, ctx): Promise<Response> {
+    try {
+      return await handleRequest(request, env, ctx);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "worker_error",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return json(
+        request,
+        env,
+        {
+          error:
+            "Cloud API failed unexpectedly. Check worker logs, D1 migrations, and API keys.",
+        },
+        500,
+      );
+    }
   },
 } satisfies ExportedHandler<Env>;

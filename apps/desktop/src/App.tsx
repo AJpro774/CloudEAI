@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   buildSystemPrompt,
   DEFAULT_PREFERENCES,
   GEMINI_MODEL,
-  LOCAL_MODEL,
+  LOCAL_DEFAULT_MODEL,
+  LOCAL_MODELS,
   MODE_CONFIGS,
+  resolveLocalModel,
   type AppData,
   type ChatMessage,
   type Conversation,
@@ -39,13 +41,20 @@ import {
   type ModelDownloadProgress,
   type ModelStatus,
 } from "./lib/api";
+import {
+  historyLabel,
+  localPrompt,
+  readAttachment,
+  type ChatAttachment,
+} from "./lib/files";
 import "./App.css";
 
 const now = () => new Date().toISOString();
 
 function createConversation(
   mode: MasterMode = "code",
-  modelRoute: ModelRoute = "local",
+  modelRoute: ModelRoute = "cloud",
+  localModelId: string = LOCAL_DEFAULT_MODEL.id,
 ): Conversation {
   const timestamp = now();
   return {
@@ -53,6 +62,8 @@ function createConversation(
     title: "New conversation",
     mode,
     modelRoute,
+    cloudModelId: GEMINI_MODEL,
+    localModelId,
     messages: [],
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -71,15 +82,6 @@ function createInitialData(): AppData {
   };
 }
 
-const initialModelStatus: ModelStatus = {
-  modelDownloaded: false,
-  downloadedBytes: 0,
-  expectedBytes: LOCAL_MODEL.expectedBytes,
-  runtimeReady: false,
-  runtimeRunning: false,
-  modelPath: "",
-};
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -88,15 +90,19 @@ function App() {
   const [data, setData] = useState<AppData>(createInitialData);
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const sendRequestId = useRef(0);
+  const lastSentDraft = useRef("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [modelStatus, setModelStatus] =
-    useState<ModelStatus>(initialModelStatus);
+  const [modelStatuses, setModelStatuses] = useState<Record<string, ModelStatus>>(
+    {},
+  );
   const [downloadProgress, setDownloadProgress] =
     useState<ModelDownloadProgress | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [cloudRemaining, setCloudRemaining] = useState<number | null>(null);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
@@ -113,7 +119,13 @@ function App() {
 
   const refreshModelStatus = useCallback(async () => {
     try {
-      setModelStatus(await getModelStatus());
+      const entries = await Promise.all(
+        LOCAL_MODELS.map(async (model) => [
+          model.id,
+          await getModelStatus(model.id),
+        ] as const),
+      );
+      setModelStatuses(Object.fromEntries(entries));
     } catch (error) {
       setNotice(errorMessage(error));
     }
@@ -200,6 +212,16 @@ function App() {
     updateConversation(activeConversation.id, (conversation) => ({
       ...conversation,
       modelRoute,
+      cloudModelId: GEMINI_MODEL,
+      localModelId: conversation.localModelId ?? LOCAL_DEFAULT_MODEL.id,
+    }));
+  };
+
+  const selectLocalModel = (localModelId: string) => {
+    updateConversation(activeConversation.id, (conversation) => ({
+      ...conversation,
+      modelRoute: "local",
+      localModelId,
     }));
   };
 
@@ -207,6 +229,7 @@ function App() {
     const conversation = createConversation(
       activeConversation.mode,
       activeConversation.modelRoute,
+      activeConversation.localModelId ?? LOCAL_DEFAULT_MODEL.id,
     );
     mutateData((current) => ({
       ...current,
@@ -238,7 +261,6 @@ function App() {
     conversationId: string,
     messageId: string,
     content: string,
-    route: ModelRoute,
     modelLabel?: string,
     append = false,
   ) => {
@@ -269,7 +291,7 @@ function App() {
             role: "assistant",
             content,
             createdAt: now(),
-            modelRoute: route,
+            modelRoute: conversation.modelRoute,
             mode: conversation.mode,
             modelLabel,
           },
@@ -279,18 +301,46 @@ function App() {
   };
 
   const sendMessage = async () => {
-    const text = draft.trim();
-    if (!text || isSending) return;
-
+    if (isSending) return;
     const conversation = activeConversation;
+    const localModel = resolveLocalModel(conversation.localModelId);
+    const isLocal = conversation.modelRoute === "local";
+    const visibleText = historyLabel(draft, attachments);
+    if (!visibleText) return;
+
+    if (isLocal && attachments.some((file) => file.kind === "pdf")) {
+      setNotice("PDFs need Gemini. Switch to Gemini, then send.");
+      return;
+    }
+    if (
+      isLocal &&
+      attachments.some((file) => file.kind === "image") &&
+      !localModel.vision
+    ) {
+      setNotice("Images need LFM2.5 VL 3B. Switch to that Liquid model, then send.");
+      return;
+    }
+
     const conversationId = conversation.id;
     const assistantId = crypto.randomUUID();
+    const cloudFiles = attachments.map((file) => ({
+      name: file.name,
+      mimeType: file.mimeType,
+      text: file.text,
+      dataBase64: file.dataBase64,
+    }));
+    const images = attachments
+      .filter((file) => file.kind === "image" && file.dataBase64)
+      .map((file) => ({
+        mimeType: file.mimeType,
+        dataBase64: file.dataBase64 as string,
+      }));
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
-      content: text,
+      content: visibleText,
       createdAt: now(),
-      modelRoute: conversation.modelRoute,
+      modelRoute: isLocal ? "local" : "cloud",
       mode: conversation.mode,
     };
     const modelMessages: ModelMessage[] = [
@@ -298,17 +348,24 @@ function App() {
         role: message.role,
         content: message.content,
       })),
-      { role: "user", content: text },
+      {
+        role: "user",
+        content: isLocal ? localPrompt(draft, attachments) : visibleText,
+      },
     ];
 
+    lastSentDraft.current = draft;
+    const requestId = ++sendRequestId.current;
+    const stillCurrent = () => requestId === sendRequestId.current;
     setDraft("");
+    setAttachments([]);
     setNotice(null);
     setIsSending(true);
     updateConversation(conversationId, (current) => ({
       ...current,
       title:
         current.messages.length === 0
-          ? text.slice(0, 48) + (text.length > 48 ? "…" : "")
+          ? visibleText.slice(0, 48) + (visibleText.length > 48 ? "…" : "")
           : current.title,
       messages: [...current.messages, userMessage],
     }));
@@ -320,16 +377,18 @@ function App() {
     let completedText = "";
 
     try {
-      if (conversation.modelRoute === "local") {
-        if (!modelStatus.modelDownloaded) {
+      if (isLocal) {
+        const status = modelStatuses[localModel.id];
+        if (!status?.modelDownloaded) {
           setSettingsOpen(true);
           throw new Error(
-            "Download Gemma 4 in Settings before using private offline mode.",
+            `Download ${localModel.label} in Settings before using local Liquid mode.`,
           );
         }
-        if (!modelStatus.runtimeRunning) {
+        if (!status.runtimeRunning) {
           setIsStarting(true);
-          await startLocalModel();
+          await startLocalModel(localModel.id);
+          if (!stillCurrent()) return;
           await refreshModelStatus();
           setIsStarting(false);
         }
@@ -337,13 +396,15 @@ function App() {
           modelMessages,
           systemPrompt,
           MODE_CONFIGS[conversation.mode].temperature,
+          localModel.id,
+          images,
         );
+        if (!stillCurrent()) return;
         completedText = response.text;
         addAssistantText(
           conversationId,
           assistantId,
           response.text,
-          "local",
           response.model,
         );
       } else {
@@ -353,19 +414,22 @@ function App() {
             messages: modelMessages,
             systemPrompt,
             temperature: MODE_CONFIGS[conversation.mode].temperature,
+            model: GEMINI_MODEL,
+            files: cloudFiles,
           },
           (chunk) => {
+            if (!stillCurrent()) return;
             completedText += chunk;
             addAssistantText(
               conversationId,
               assistantId,
               chunk,
-              "cloud",
-              GEMINI_MODEL,
+              "Gemini 3.7 Flash",
               true,
             );
           },
         );
+        if (!stillCurrent()) return;
         if (Number.isFinite(response.remaining)) {
           setCloudRemaining(response.remaining ?? null);
         }
@@ -375,6 +439,7 @@ function App() {
         voice.speak(completedText);
       }
     } catch (error) {
+      if (!stillCurrent()) return;
       const message = errorMessage(error);
       setNotice(message);
       if (!completedText) {
@@ -382,36 +447,84 @@ function App() {
           conversationId,
           assistantId,
           `I couldn’t complete that request. ${message}`,
-          conversation.modelRoute,
+          isLocal ? localModel.label : "Gemini 3.7 Flash",
         );
       }
     } finally {
-      setIsSending(false);
-      setIsStarting(false);
+      if (stillCurrent()) {
+        setIsSending(false);
+        setIsStarting(false);
+      }
     }
   };
 
-  const handleDownloadModel = async () => {
-    setIsDownloading(true);
+  const cancelSend = () => {
+    sendRequestId.current += 1;
+    setIsSending(false);
+    setIsStarting(false);
+    setDraft((current) => current || lastSentDraft.current);
+    setNotice("Request cancelled. You can send again.");
+  };
+
+  const addAttachments = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const next: ChatAttachment[] = [];
+    let totalBytes = attachments.reduce((sum, file) => sum + file.bytes, 0);
+    for (const file of Array.from(fileList)) {
+      if (attachments.length + next.length >= 6) {
+        setNotice("You can attach up to 6 files.");
+        break;
+      }
+      try {
+        const attachment = await readAttachment(file, totalBytes);
+        totalBytes += attachment.bytes;
+        next.push(attachment);
+      } catch (error) {
+        setNotice(errorMessage(error));
+      }
+    }
+    if (next.length) {
+      setAttachments((current) => [...current, ...next]);
+      const localModel = resolveLocalModel(activeConversation.localModelId);
+      if (
+        activeConversation.modelRoute === "local" &&
+        next.some((file) => file.kind === "image") &&
+        !localModel.vision
+      ) {
+        setNotice("Images need LFM2.5 VL 3B, or switch to Gemini.");
+      } else if (
+        activeConversation.modelRoute === "local" &&
+        next.some((file) => file.kind === "pdf")
+      ) {
+        setNotice("PDFs need Gemini.");
+      } else {
+        setNotice(null);
+      }
+    }
+  };
+
+  const handleDownloadModel = async (modelId: string) => {
+    setDownloadingId(modelId);
     setNotice(null);
     try {
-      await downloadLocalModel();
+      await downloadLocalModel(modelId);
       await refreshModelStatus();
-      setSyncStatus("Gemma 4 was downloaded and verified.");
+      setSyncStatus(`${resolveLocalModel(modelId).label} was downloaded and verified.`);
     } catch (error) {
       setNotice(errorMessage(error));
     } finally {
-      setIsDownloading(false);
+      setDownloadingId(null);
+      setDownloadProgress(null);
     }
   };
 
-  const handleStartModel = async () => {
+  const handleStartModel = async (modelId: string) => {
     setIsStarting(true);
     setNotice(null);
     try {
-      await startLocalModel();
+      await startLocalModel(modelId);
       await refreshModelStatus();
-      setSyncStatus("Gemma 4 is ready for offline conversations.");
+      setSyncStatus(`${resolveLocalModel(modelId).label} is ready for local conversations.`);
     } catch (error) {
       setNotice(errorMessage(error));
     } finally {
@@ -558,7 +671,7 @@ function App() {
             <Menu size={23} aria-hidden="true" />
           </button>
           <strong>CloudEAI</strong>
-          <span>{MODE_CONFIGS[activeConversation.mode].label}</span>
+          <span>{MODE_CONFIGS[activeConversation.mode]?.label ?? "Chat"}</span>
         </div>
         <ModeSelector
           selected={activeConversation.mode}
@@ -577,13 +690,22 @@ function App() {
           conversation={activeConversation}
           cloudRemaining={cloudRemaining}
           draft={draft}
+          attachments={attachments}
           isListening={voice.isListening}
           isSending={isSending}
           voiceError={voice.voiceError}
           voiceSupported={voice.supported}
           onDraftChange={setDraft}
+          onAttach={addAttachments}
+          onRemoveAttachment={(id) =>
+            setAttachments((current) =>
+              current.filter((file) => file.id !== id),
+            )
+          }
           onRouteChange={selectRoute}
+          onLocalModelChange={selectLocalModel}
           onSend={() => void sendMessage()}
+          onCancel={cancelSend}
           onSpeak={voice.speak}
           onStartListening={() =>
             voice.startListening((transcript) => setDraft(transcript))
@@ -594,22 +716,22 @@ function App() {
       {settingsOpen ? (
         <SettingsPanel
           downloadProgress={downloadProgress}
-          isDownloading={isDownloading}
+          downloadingId={downloadingId}
           isStarting={isStarting}
-          modelStatus={modelStatus}
+          modelStatuses={modelStatuses}
           preferences={data.preferences}
           recoveryCode={recoveryCode}
           syncEnabled={Boolean(data.sync)}
           syncStatus={syncStatus}
           onClose={() => setSettingsOpen(false)}
           onCreateSync={() => void enableSync()}
-          onDownloadModel={() => void handleDownloadModel()}
+          onDownloadModel={(id) => void handleDownloadModel(id)}
           onPreferencesChange={(preferences: UserPreferences) =>
             mutateData((current) => ({ ...current, preferences }))
           }
           onRestore={(code) => void restoreHistory(code)}
           onShowRecovery={() => void showRecoveryCode()}
-          onStartModel={() => void handleStartModel()}
+          onStartModel={(id) => void handleStartModel(id)}
           onSyncNow={() => void syncNow()}
         />
       ) : null}

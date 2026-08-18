@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import type { UserPreferences } from "@cloudeai/shared";
+import { LOCAL_MODELS, type UserPreferences } from "@cloudeai/shared";
 import type {
   ModelDownloadProgress,
   ModelStatus,
@@ -18,20 +18,20 @@ import type {
 
 interface SettingsPanelProps {
   downloadProgress: ModelDownloadProgress | null;
-  isDownloading: boolean;
+  downloadingId: string | null;
   isStarting: boolean;
-  modelStatus: ModelStatus;
+  modelStatuses: Record<string, ModelStatus>;
   preferences: UserPreferences;
   recoveryCode: string | null;
   syncEnabled: boolean;
   syncStatus: string | null;
   onClose: () => void;
   onCreateSync: () => void;
-  onDownloadModel: () => void;
+  onDownloadModel: (modelId: string) => void;
   onPreferencesChange: (preferences: UserPreferences) => void;
   onRestore: (recoveryCode: string) => void;
   onShowRecovery: () => void;
-  onStartModel: () => void;
+  onStartModel: (modelId: string) => void;
   onSyncNow: () => void;
 }
 
@@ -45,9 +45,9 @@ function formatBytes(value: number): string {
 
 export function SettingsPanel({
   downloadProgress,
-  isDownloading,
+  downloadingId,
   isStarting,
-  modelStatus,
+  modelStatuses,
   preferences,
   recoveryCode,
   syncEnabled,
@@ -235,33 +235,71 @@ export function SettingsPanel({
 
           <section className="settings-section" aria-labelledby="model-heading">
             <div className="settings-title">
-              <h3 id="model-heading">Offline Gemma 4</h3>
+              <h3 id="model-heading">Gemini + Liquid</h3>
               <p>
-                The verified model downloads once, then runs privately without an
-                internet connection.
+                Gemini is the free cloud model. Liquid LFM models download once
+                and run privately on this Mac.
               </p>
             </div>
-            <div className="model-card">
-              <div className="model-card-icon" aria-hidden="true">
-                <HardDrive size={24} />
-              </div>
-              <div>
-                <strong>Gemma 4 E4B · Q4</strong>
-                <span>
-                  {modelStatus.modelDownloaded
-                    ? `${formatBytes(modelStatus.downloadedBytes)} installed`
-                    : `${formatBytes(modelStatus.expectedBytes)} download · approximately 7 GB free space required`}
-                </span>
-              </div>
-              {modelStatus.modelDownloaded ? (
-                <CheckCircle2
-                  className="success-icon"
-                  size={22}
-                  aria-label="Installed"
-                />
-              ) : null}
-            </div>
-            {isDownloading && downloadProgress ? (
+            {LOCAL_MODELS.map((model) => {
+              const status = modelStatuses[model.id];
+              const downloaded = status?.modelDownloaded ?? false;
+              const running = status?.runtimeRunning ?? false;
+              const extra =
+                "mmprojBytes" in model && typeof model.mmprojBytes === "number"
+                  ? model.mmprojBytes
+                  : 0;
+              const expected = model.expectedBytes + extra;
+              return (
+                <div className="local-model-block" key={model.id}>
+                <div className="model-card">
+                  <div className="model-card-icon" aria-hidden="true">
+                    <HardDrive size={24} />
+                  </div>
+                  <div>
+                    <strong>{model.label}</strong>
+                    <span>
+                      {downloaded
+                        ? `${formatBytes(status?.downloadedBytes ?? expected)} installed`
+                        : `${formatBytes(expected)} download`}
+                      {model.vision ? " · vision" : model.role === "extract" ? " · extract" : " · chat"}
+                    </span>
+                  </div>
+                  {downloaded ? (
+                    <CheckCircle2
+                      className="success-icon"
+                      size={22}
+                      aria-label="Installed"
+                    />
+                  ) : null}
+                </div>
+                  <button
+                    className="primary-setting-button"
+                    type="button"
+                    onClick={() =>
+                      downloaded ? onStartModel(model.id) : onDownloadModel(model.id)
+                    }
+                    disabled={Boolean(downloadingId) || isStarting}
+                  >
+                    {downloaded ? (
+                      <Play size={19} aria-hidden="true" />
+                    ) : (
+                      <Download size={19} aria-hidden="true" />
+                    )}
+                    {downloadingId === model.id
+                      ? "Downloading…"
+                      : isStarting && running
+                        ? "Starting…"
+                        : running
+                          ? "Ready"
+                          : downloaded
+                            ? "Start"
+                            : "Download"}
+                  </button>
+                </div>
+              );
+            })}
+            {downloadingId && downloadProgress ? (
               <div className="download-progress" aria-live="polite">
                 <div>
                   <span>Downloading securely</span>
@@ -274,29 +312,6 @@ export function SettingsPanel({
                 </small>
               </div>
             ) : null}
-            <button
-              className="primary-setting-button"
-              type="button"
-              onClick={
-                modelStatus.modelDownloaded ? onStartModel : onDownloadModel
-              }
-              disabled={isDownloading || isStarting}
-            >
-              {modelStatus.modelDownloaded ? (
-                <Play size={19} aria-hidden="true" />
-              ) : (
-                <Download size={19} aria-hidden="true" />
-              )}
-              {isDownloading
-                ? "Downloading…"
-                : isStarting
-                  ? "Starting Gemma…"
-                  : modelStatus.runtimeRunning
-                    ? "Gemma is ready"
-                    : modelStatus.modelDownloaded
-                      ? "Start offline model"
-                      : "Download verified model"}
-            </button>
           </section>
 
           <section className="settings-section" aria-labelledby="sync-heading">
@@ -383,7 +398,7 @@ export function SettingsPanel({
               <h3 id="limits-heading">Cloud limits</h3>
               <p>
                 Gemini is capped at {preferences.cloudDailyLimit} requests per day
-                and 4 requests per minute. Local Gemma has no usage limit.
+                and 4 requests per minute. Local Liquid models have no usage cap.
               </p>
             </div>
           </section>

@@ -1,11 +1,11 @@
 # CloudEAI
 
-CloudEAI is an accessible, local-first desktop chatbot for Apple Silicon Macs. It combines offline Google Gemma 4 with optional Gemini 3.7 Flash, encrypted history, voice interaction, and four purpose-built master prompt modes.
+CloudEAI is an accessible, local-first desktop chatbot for Apple Silicon Macs. It combines offline LiquidAI GGUF models with Gemini 3.7 Flash, encrypted history, voice interaction, and four purpose-built master prompt modes.
 
 ## Product commitments
 
 - No ads, analytics, microtransactions, or paid upgrade prompts.
-- Local Gemma conversations stay on the Mac.
+- Local Liquid conversations stay on the Mac.
 - History is encrypted with AES-256-GCM and a key protected by macOS Keychain.
 - Optional sync uploads ciphertext only.
 - Cloud prompts are processed transiently by the CloudEAI proxy and Google.
@@ -27,7 +27,7 @@ packages/
 - macOS 13 or newer on Apple Silicon
 - Node.js 22 or newer
 - Current Rust stable toolchain
-- Approximately 7 GB free for the offline model
+- Approximately 3 GB free for the offline model
 
 ## Configure Gemini
 
@@ -68,7 +68,7 @@ Run the website separately:
 npm run dev:site
 ```
 
-The desktop build downloads and verifies a pinned `llama.cpp` Apple Silicon runtime. Gemma 4 itself is downloaded from the official Google Hugging Face repository only when the user chooses **Download verified model** inside Settings.
+The desktop build downloads and verifies a pinned `llama.cpp` Apple Silicon runtime. LiquidAI GGUF models are downloaded from Hugging Face only when the user chooses **Download verified model** inside Settings.
 
 ## Verify
 

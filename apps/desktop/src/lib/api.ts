@@ -6,8 +6,11 @@ import type {
   EncryptedEnvelope,
   ModelMessage,
 } from "@cloudeai/shared";
+import { LOCAL_DEFAULT_MODEL } from "@cloudeai/shared";
 
 export interface ModelStatus {
+  id: string;
+  label: string;
   modelDownloaded: boolean;
   downloadedBytes: number;
   expectedBytes: number;
@@ -44,26 +47,28 @@ export async function saveAppData(data: AppData): Promise<void> {
   });
 }
 
-export async function getModelStatus(): Promise<ModelStatus> {
+export async function getModelStatus(modelId?: string): Promise<ModelStatus> {
   if (!isDesktopRuntime()) {
     return {
+      id: modelId ?? LOCAL_DEFAULT_MODEL.id,
+      label: LOCAL_DEFAULT_MODEL.label,
       modelDownloaded: false,
       downloadedBytes: 0,
-      expectedBytes: 5_154_941_280,
+      expectedBytes: LOCAL_DEFAULT_MODEL.expectedBytes,
       runtimeReady: false,
       runtimeRunning: false,
       modelPath: "Available in the CloudEAI desktop app",
     };
   }
-  return invoke<ModelStatus>("get_model_status");
+  return invoke<ModelStatus>("get_model_status", { modelId });
 }
 
-export async function downloadLocalModel(): Promise<void> {
-  await invoke("download_local_model");
+export async function downloadLocalModel(modelId?: string): Promise<void> {
+  await invoke("download_local_model", { modelId });
 }
 
-export async function startLocalModel(): Promise<void> {
-  await invoke("start_local_model");
+export async function startLocalModel(modelId?: string): Promise<void> {
+  await invoke("start_local_model", { modelId });
 }
 
 export async function stopLocalModel(): Promise<void> {
@@ -74,11 +79,19 @@ export async function localChat(
   messages: ModelMessage[],
   systemPrompt: string,
   temperature: number,
+  modelId?: string,
+  images?: Array<{ mimeType: string; dataBase64: string }>,
 ): Promise<ChatResponse> {
+  const payload = messages.map((message, index) =>
+    index === messages.length - 1 && message.role === "user" && images?.length
+      ? { ...message, images }
+      : message,
+  );
   return invoke<ChatResponse>("local_chat", {
-    messages,
+    messages: payload,
     systemPrompt,
     temperature,
+    modelId,
   });
 }
 
@@ -105,21 +118,56 @@ function textFromGeminiChunk(value: unknown): string {
     .join("");
 }
 
+function textFromOpenAIChunk(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const choices = (value as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices[0] || typeof choices[0] !== "object") {
+    return "";
+  }
+  const delta = (choices[0] as { delta?: unknown }).delta;
+  if (!delta || typeof delta !== "object") return "";
+  const content = (delta as { content?: unknown }).content;
+  return typeof content === "string" ? content : "";
+}
+
+function textFromCloudChunk(value: unknown): string {
+  return textFromGeminiChunk(value) || textFromOpenAIChunk(value);
+}
+
+function cloudUnreachableMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    /load failed|failed to fetch|networkerror|network request failed|could not connect/i.test(
+      message,
+    )
+  ) {
+    return `Cloud API is unreachable at ${cloudEndpoint}. Start the local worker with npm run dev:sync, or set VITE_CLOUD_API_URL to a deployed Worker.`;
+  }
+  return message;
+}
+
 export async function streamCloudChat(
   request: ChatRequest,
   onText: (text: string) => void,
 ): Promise<ChatResponse> {
-  const response = await fetch(`${cloudEndpoint}/v1/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${cloudEndpoint}/v1/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  } catch (error) {
+    throw new Error(cloudUnreachableMessage(error));
+  }
 
   if (!response.ok) {
     const error = (await response.json().catch(() => null)) as
       | { error?: string }
       | null;
-    throw new Error(error?.error ?? `Cloud request failed (${response.status}).`);
+    throw new Error(
+      error?.error ?? `Cloud request failed (HTTP ${response.status}).`,
+    );
   }
   if (!response.body) throw new Error("The cloud response did not include a stream.");
 
@@ -140,7 +188,7 @@ export async function streamCloudChat(
       const data = line.slice(5).trim();
       if (!data || data === "[DONE]") continue;
       try {
-        const next = textFromGeminiChunk(JSON.parse(data));
+        const next = textFromCloudChunk(JSON.parse(data));
         if (next) {
           text += next;
           onText(next);
@@ -152,7 +200,7 @@ export async function streamCloudChat(
   }
 
   if (!text.trim()) {
-    throw new Error("Gemini returned an empty response.");
+    throw new Error("The cloud model returned an empty response.");
   }
   return {
     text,

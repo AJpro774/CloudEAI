@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workerDirectory = resolve(scriptDirectory, "..");
-const rootEnvironmentPath = resolve(workerDirectory, "../../.env.local");
+const rootDirectory = resolve(workerDirectory, "../..");
 const targetPath = resolve(workerDirectory, ".dev.vars");
 
 function readValue(source, name) {
@@ -23,19 +23,19 @@ function readValue(source, name) {
   return value;
 }
 
-let source = "";
-try {
-  source = await readFile(rootEnvironmentPath, "utf8");
-} catch {
-  // CI and fresh clones intentionally receive an empty development secret.
+async function readOptional(path) {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return "";
+  }
 }
 
-const apiKey = readValue(source, "GEMINI_API_KEY");
-if (/[\r\n]/.test(apiKey)) {
-  throw new Error("GEMINI_API_KEY contains an unexpected line break.");
+const envLocal = await readOptional(resolve(rootDirectory, ".env.local"));
+const geminiKey = readValue(envLocal, "GEMINI_API_KEY");
+if (/[\r\n]/.test(geminiKey)) {
+  throw new Error("An API key contains an unexpected line break.");
 }
 
 await mkdir(dirname(targetPath), { recursive: true });
-await writeFile(targetPath, `GEMINI_API_KEY=${apiKey}\n`, {
-  mode: 0o600,
-});
+await writeFile(targetPath, `GEMINI_API_KEY=${geminiKey}\n`, { mode: 0o600 });

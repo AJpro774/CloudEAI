@@ -31,6 +31,8 @@ export interface Conversation {
   title: string;
   mode: MasterMode;
   modelRoute: ModelRoute;
+  cloudModelId?: string;
+  localModelId?: string;
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
@@ -81,11 +83,20 @@ export interface ModelMessage {
   content: string;
 }
 
+export interface ChatFilePart {
+  name: string;
+  mimeType: string;
+  text?: string;
+  dataBase64?: string;
+}
+
 export interface ChatRequest {
   deviceId: string;
   messages: ModelMessage[];
   systemPrompt: string;
   temperature: number;
+  model?: string;
+  files?: ChatFilePart[];
 }
 
 export interface ChatResponse {
@@ -95,24 +106,97 @@ export interface ChatResponse {
 }
 
 export const GEMINI_MODEL = "gemini-3.7-flash";
+
+export const CLOUD_MODELS = [
+  {
+    id: GEMINI_MODEL,
+    provider: "gemini" as const,
+    label: "Gemini 3.7 Flash",
+    family: "Gemini",
+  },
+] as const;
+
+export type CloudModelId = (typeof CLOUD_MODELS)[number]["id"];
+
+export type ResolvedCloudModel = {
+  id: string;
+  provider: "gemini";
+  label: string;
+  family: string;
+};
+
+export function resolveCloudModel(id: string | undefined): ResolvedCloudModel {
+  return CLOUD_MODELS.find((model) => model.id === id) ?? CLOUD_MODELS[0];
+}
+
+export const LOCAL_MODELS = [
+  {
+    id: "lfm2.5-2.6b",
+    label: "LFM2.5 2.6B",
+    family: "Liquid",
+    role: "chat",
+    repo: "LiquidAI/LFM2.5-2.6B-GGUF",
+    file: "LFM2.5-2.6B-Q4_K_M.gguf",
+    downloadUrl:
+      "https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_K_M.gguf",
+    expectedBytes: 1_674_454_848,
+    sha256: "79fdf00351b46cf26f020aead28d01889886be87c55fa0eb907e6f9b00bfee14",
+    vision: false,
+  },
+  {
+    id: "lfm2.5-vl-3b",
+    label: "LFM2.5 VL 3B",
+    family: "Liquid",
+    role: "vision",
+    repo: "LiquidAI/LFM2.5-VL-3B-GGUF",
+    file: "LFM2.5-VL-3B-Q4_K_M.gguf",
+    downloadUrl:
+      "https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF/resolve/main/LFM2.5-VL-3B-Q4_K_M.gguf",
+    expectedBytes: 1_674_454_240,
+    sha256: "83c18dfba02c75769cdd63f73e37c343400e82d434ff1b14bcc1cb02fcf2f5f2",
+    vision: true,
+    mmprojFile: "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
+    mmprojUrl:
+      "https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF/resolve/main/mmproj-LFM2.5-VL-3B-Q8_0.gguf",
+    mmprojBytes: 583_109_120,
+    mmprojSha256:
+      "8ba27050dc88737db66b856d3b74e0e6cf54bee35fa4d9d9808f69ee556bbd43",
+  },
+  {
+    id: "lfm2-1.2b-extract",
+    label: "LFM2 1.2B Extract",
+    family: "Liquid",
+    role: "extract",
+    repo: "LiquidAI/LFM2-1.2B-Extract-GGUF",
+    file: "LFM2-1.2B-Extract-Q4_K_M.gguf",
+    downloadUrl:
+      "https://huggingface.co/LiquidAI/LFM2-1.2B-Extract-GGUF/resolve/main/LFM2-1.2B-Extract-Q4_K_M.gguf",
+    expectedBytes: 730_894_048,
+    sha256: "09b60b507ee7d1698b2b4dfce184c75083d7790c7701910ed60afa2801024702",
+    vision: false,
+  },
+] as const;
+
+export type LocalModelId = (typeof LOCAL_MODELS)[number]["id"];
+export const LOCAL_DEFAULT_MODEL = LOCAL_MODELS[0];
+export const LOCAL_MODEL = LOCAL_DEFAULT_MODEL;
+
+export function resolveLocalModel(id: string | undefined) {
+  return LOCAL_MODELS.find((model) => model.id === id) ?? LOCAL_DEFAULT_MODEL;
+}
 export const CLOUD_LIMITS = {
   requestsPerDay: 25,
   requestsPerMinute: 4,
   maxMessages: 40,
   maxMessageCharacters: 24_000,
-  maxRequestCharacters: 80_000,
+  maxRequestCharacters: 200_000,
 } as const;
 
-export const LOCAL_MODEL = {
-  id: "gemma-4-e4b-it-q4",
-  label: "Gemma 4 E4B",
-  repo: "google/gemma-4-E4B-it-qat-q4_0-gguf",
-  file: "gemma-4-E4B_q4_0-it.gguf",
-  projectorFile: "gemma-4-E4B-it-mmproj.gguf",
-  downloadUrl:
-    "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/gemma-4-E4B_q4_0-it.gguf",
-  expectedBytes: 5_154_941_280,
-  sha256: "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee",
+export const FILE_UPLOAD = {
+  maxFiles: 6,
+  maxFileBytes: 12 * 1024 * 1024,
+  maxTotalBytes: 20 * 1024 * 1024,
+  maxTextChars: 120_000,
 } as const;
 
 export const DEFAULT_PREFERENCES: UserPreferences = {

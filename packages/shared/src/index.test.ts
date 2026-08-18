@@ -4,15 +4,19 @@ import {
   DEFAULT_PREFERENCES,
   GEMINI_MODEL,
   LOCAL_MODEL,
+  resolveCloudModel,
+  resolveLocalModel,
   MODE_CONFIGS,
   type MasterMode,
 } from "./index";
 
 describe("CloudEAI model contracts", () => {
-  it("pins the verified local and cloud models", () => {
+  it("pins Gemini cloud and Liquid local models", () => {
     expect(GEMINI_MODEL).toBe("gemini-3.7-flash");
-    expect(LOCAL_MODEL.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(LOCAL_MODEL.expectedBytes).toBeGreaterThan(5_000_000_000);
+    expect(resolveCloudModel("unknown").id).toBe(GEMINI_MODEL);
+    expect(resolveLocalModel("lfm2.5-vl-3b").vision).toBe(true);
+    expect(resolveLocalModel("lfm2-1.2b-extract").role).toBe("extract");
+    expect(LOCAL_MODEL.file).toContain("LFM2.5-2.6B");
   });
 
   it.each(Object.keys(MODE_CONFIGS) as MasterMode[])(
